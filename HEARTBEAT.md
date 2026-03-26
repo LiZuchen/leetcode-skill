@@ -79,10 +79,10 @@
 - "学习建议"
 
 ## 状态缓存
-- 文件：`C:\Users\11858\Documents\实习\record\leetcode-state.json`
+- 文件：`<USER_DIR>/Documents/leetcode/leetcode-state.json`
 - 记录：URL + 状态 + 代码哈希 + 最后记录时间
 - 相同提交不会重复记录
 
 ## 报告文件
-- **日报**: `C:\Users\11858\Documents\实习\record\reports\daily-report-YYYY-MM-DD.md`
-- **周报**: `C:\Users\11858\Documents\实习\record\reports\weekly-report-YYYY-Www.md`
+- **日报**: `<USER_DIR>/Documents/leetcode/reports/daily-report-YYYY-MM-DD.md`
+- **周报**: `<USER_DIR>/Documents/leetcode/reports/weekly-report-YYYY-Www.md`

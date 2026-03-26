@@ -14,8 +14,8 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 import re
 
-# 做题记录目录
-NOTES_DIR = r"C:\Users\11858\Documents\实习\record"
+# 做题记录目录（可配置）
+NOTES_DIR = os.environ.get("LEETCODE_NOTES_DIR", r"<USER_DIR>/Documents/leetcode")
 
 def ensure_dir():
     """确保做题记录目录存在"""

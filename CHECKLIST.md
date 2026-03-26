@@ -22,17 +22,17 @@ leetcode-skill-github/
 
 | 原路径 | 替换为 |
 |--------|--------|
-| `C:\Users\11858\Documents\实习\record` | `<USER_DIR>\Documents\leetcode` |
-| `C:\Users\11858\AppData\Local\OpenClaw\EdgeCDP` | `C:\\Users\\<USERNAME>\\AppData\\Local\\OpenClaw\\EdgeCDP` |
-| `C:\Users\11858\.openclaw\workspace` | `<WORKSPACE_DIR>` |
+| `C:\Users\<USERNAME>\Documents\leetcode` | `<USER_DIR>\Documents\leetcode` |
+| `C:\Users\<USERNAME>\AppData\Local\OpenClaw\EdgeCDP` | `<USER_DATA_DIR>` |
+| `<WORKSPACE_DIR>/leetcode-skill-github` | `<REPO_DIR>` |
 
 ### 用户名
 
 | 原文 | 替换为 |
 |------|--------|
-| `11858` | `<USERNAME>` |
-| `覃枫` | （已删除） |
-| `tan-feng-7` | （已删除） |
+| `<USERNAME>` | 你的 Windows 用户名 |
+| 个人姓名 | （已删除） |
+| LeetCode 用户名 | （已删除） |
 
 ### 环境变量
 
@@ -73,7 +73,7 @@ set LEETCODE_NOTES_DIR=C:\Users\你的用户名\Documents\leetcode
 
 ### 1. 初始化 Git 仓库
 ```bash
-cd C:\Users\11858\.openclaw\workspace\leetcode-skill-github
+cd <REPO_DIR>
 git init
 git add .
 git commit -m "Initial commit: LeetCode Wrong Notes Skill"
