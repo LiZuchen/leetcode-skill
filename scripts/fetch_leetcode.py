@@ -124,27 +124,52 @@ def fetch_leetcode_problem(url):
             has_status = True
             break
     
-    # 尝试提取执行用时和内存
-    runtime_match = re.search(r'执行用时 [：:]\s*(\d+\s*ms|\d+\s*毫秒)', response.text)
-    if runtime_match:
-        problem['runtime'] = runtime_match.group(1).replace('毫秒', 'ms').strip()
+    # 尝试提取执行用时和内存（多种格式）
+    runtime_patterns = [
+        r'执行用时 [：:]\s*(\d+)\s*ms',
+        r'执行用时 [：:]\s*(\d+)\s*毫秒',
+        r'(\d+)\s*ms\s*击败',
+    ]
+    for pattern in runtime_patterns:
+        runtime_match = re.search(pattern, response.text)
+        if runtime_match:
+            problem['runtime'] = f"{runtime_match.group(1)} ms"
+            break
     
-    memory_match = re.search(r'内存消耗 [：:]\s*(\d+\.\d+\s*MB|\d+\s*MB)', response.text)
-    if memory_match:
-        problem['memory'] = memory_match.group(1).strip()
+    memory_patterns = [
+        r'内存消耗 [：:]\s*(\d+\.\d+)\s*MB',
+        r'内存消耗 [：:]\s*(\d+)\s*MB',
+        r'(\d+\.\d+)\s*MB\s*击败',
+    ]
+    for pattern in memory_patterns:
+        memory_match = re.search(pattern, response.text)
+        if memory_match:
+            problem['memory'] = f"{memory_match.group(1)} MB"
+            break
     
-    # 检测是否是提交结果页面
-    # 提交结果页面会有"通过"、"解答错误"等具体状态，以及"93 / 93 个通过的测试用例"这样的文本
-    has_submission_result = '个通过的测试用例' in response.text or (has_status and problem['runtime'])
+    # 检测提交结果并判断状态（通过测试用例数量）
+    test_match = re.search(r'(\d+)\s*/\s*(\d+)\s*个通过的测试用例', response.text)
+    
+    if test_match:
+        passed = int(test_match.group(1))
+        total = int(test_match.group(2))
+        
+        if passed == total and not has_status:
+            # 全部通过但没有明确状态文本
+            problem['status'] = "[OK] 通过"
+            has_status = True
+        elif passed < total and not has_status:
+            # 只通过部分 → 解答错误
+            problem['status'] = f"[ERR] 解答错误 ({passed}/{total})"
+            has_status = True
+        
+        has_submission_result = True
+    else:
+        has_submission_result = False
     
     # 如果没有找到具体状态，但有"已解答"且没有提交结果，说明是题目页面而非提交结果页面
     if not has_status and '已解答' in response.text and not has_submission_result:
         print(f"[SKIP] 检测到'已解答'题目页面，但没有提交结果，跳过记录")
-        return None
-    
-    # 如果找到了状态但没有执行用时，可能是刚提交还没出结果，也跳过
-    if has_status and not problem['runtime'] and not problem['memory']:
-        print(f"[SKIP] 检测到提交状态但没有执行用时/内存，可能还在判题中，跳过记录")
         return None
     
     # 提取题目描述
