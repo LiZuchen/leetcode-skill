@@ -14,8 +14,8 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 import re
 
-# 做题记录目录（可配置）
-NOTES_DIR = os.environ.get("LEETCODE_NOTES_DIR", r"<USER_DIR>\Documents\leetcode")
+# 做题记录目录
+NOTES_DIR = r"C:\Users\11858\Documents\实习\record"
 
 def ensure_dir():
     """确保做题记录目录存在"""
@@ -108,6 +108,7 @@ def fetch_leetcode_problem(url):
             break
     
     # 尝试提取测试结果
+    # 查找"通过"、"解答错误"、"超出时限"等状态
     status_keywords = [
         ('通过', '[OK]'),
         ('解答错误', '[ERR]'),
@@ -115,9 +116,12 @@ def fetch_leetcode_problem(url):
         ('内存溢出', '[MLE]'),
         ('执行出错', '[ERR]'),
     ]
+    
+    has_status = False
     for status_text, icon in status_keywords:
         if status_text in response.text:
             problem['status'] = f"{icon} {status_text}"
+            has_status = True
             break
     
     # 尝试提取执行用时和内存
@@ -129,18 +133,36 @@ def fetch_leetcode_problem(url):
     if memory_match:
         problem['memory'] = memory_match.group(1).strip()
     
+    # 检测是否是提交结果页面
+    # 提交结果页面会有"通过"、"解答错误"等具体状态，以及"93 / 93 个通过的测试用例"这样的文本
+    has_submission_result = '个通过的测试用例' in response.text or (has_status and problem['runtime'])
+    
+    # 如果没有找到具体状态，但有"已解答"且没有提交结果，说明是题目页面而非提交结果页面
+    if not has_status and '已解答' in response.text and not has_submission_result:
+        print(f"[SKIP] 检测到'已解答'题目页面，但没有提交结果，跳过记录")
+        return None
+    
+    # 如果找到了状态但没有执行用时，可能是刚提交还没出结果，也跳过
+    if has_status and not problem['runtime'] and not problem['memory']:
+        print(f"[SKIP] 检测到提交状态但没有执行用时/内存，可能还在判题中，跳过记录")
+        return None
+    
     # 提取题目描述
+    # 尝试提取示例
     examples = []
-    example_pattern = r'示例\s*\d+[^\n]*\n(.+?)(?=示例 | 提示 | 输入：|$)'
+    example_pattern = r'示例\s*\d+[^\n]*\n(.+?)(?=示例|提示|输入：|$)'
     example_matches = re.findall(example_pattern, response.text, re.DOTALL)
     if example_matches:
         examples = [m.strip() for m in example_matches[:2]]
     
+    # 提取题目正文
     text_content = soup.get_text(separator='\n', strip=True)
     
+    # 简化处理：使用找到的示例
     if examples:
         problem['description'] = '\n\n'.join(examples)
     else:
+        # 备用：提取前 1000 字
         problem['description'] = text_content[:1000] + '...' if len(text_content) > 1000 else text_content
     
     return problem
@@ -154,6 +176,7 @@ def parse_existing_file(filepath):
         content = f.read()
     
     problems = {}
+    # 匹配题目块
     pattern = r'(# \d+\.\s*.+?\n.*?)(?=\n# \d+\.\s*|$)'
     matches = re.findall(pattern, content, re.DOTALL)
     
@@ -182,8 +205,13 @@ def save_or_update_problem(problem, code, note=""):
     timestamp = now.strftime("%Y-%m-%d %H:%M")
     date_str = now.strftime("%Y-%m-%d")
     
+    # 状态图标
     status = problem.get('status', '')
-    status_icon = "[OK]" if "通过" in status else "[ERR]" if "错误" in status else "[TLE]"
+    # 如果状态已经包含图标（如 [OK] 通过），则不再添加
+    if status.startswith('['):
+        status_icon = status.split(']')[0] + ']'
+    else:
+        status_icon = "[OK]" if "通过" in status else "[ERR]" if "错误" in status else "[TLE]"
     if not status:
         status = "待完成"
         status_icon = "[TODO]"
@@ -191,18 +219,22 @@ def save_or_update_problem(problem, code, note=""):
     runtime = problem.get('runtime', 'N/A')
     memory = problem.get('memory', 'N/A')
     
+    # 检查是否已存在
     problems = parse_existing_file(filepath)
     title = problem['title']
     
     if title in problems:
+        # 更新现有题目
         old_block = problems[title]
         
+        # 更新状态（如果新状态更好）
         if "通过" in status and "当前状态" in old_block:
             old_block = re.sub(
                 r'\*\*当前状态\*\*：.*',
                 f'**当前状态**：{status_icon} {status}',
                 old_block
             )
+            # 更新最佳用时
             if runtime and runtime != "N/A" and "最佳用时" in old_block:
                 old_block = re.sub(
                     r'\*\*最佳用时\*\*：.*',
@@ -210,6 +242,7 @@ def save_or_update_problem(problem, code, note=""):
                     old_block
                 )
         
+        # 添加提交历史
         if "## 提交历史" in old_block:
             history_match = re.search(r'(## 提交历史\n\n\| 日期 \| 状态 \| 用时 \| 内存 \| 备注 \|\n\|------\|------\|------\|------\|------\|\n)', old_block)
             if history_match:
@@ -228,6 +261,7 @@ def save_or_update_problem(problem, code, note=""):
             if desc_match:
                 old_block = old_block[:desc_match.end()-3] + history_section + old_block[desc_match.end()-3:]
         
+        # 添加代码版本
         if code and code != "# 待补充代码":
             code_section = f"""
 ### {timestamp} ({status})
@@ -245,9 +279,11 @@ def save_or_update_problem(problem, code, note=""):
         
         problems[title] = old_block
         
+        # 重建文件内容
         with open(filepath, 'r', encoding='utf-8') as f:
             content = f.read()
         
+        # 找到并替换整个块
         pattern = r'# ' + re.escape(title.split('. ')[1] if '. ' in title else title) + r'.*?(?=\n# \d+\.\s*|$)'
         match = re.search(pattern, content, re.DOTALL)
         if match:
@@ -259,6 +295,7 @@ def save_or_update_problem(problem, code, note=""):
         print(f"[UPDATE] 题目 '{title}' 已更新提交记录")
         return True
     else:
+        # 创建新题目
         content = f"""# {title}
 
 - **难度**：{problem.get('difficulty', '未知')}
@@ -320,6 +357,7 @@ def read_from_html_file(html_path):
         'memory': '',
     }
     
+    # 提取标题
     title_tag = soup.find('title')
     if title_tag:
         title_text = title_tag.get_text().strip()
@@ -329,12 +367,14 @@ def read_from_html_file(html_path):
         else:
             problem['title'] = title_text.replace('- 力扣（LeetCode）', '').replace('- LeetCode', '').strip()
     
+    # 提取难度
     difficulty_keywords = ['简单', '中等', '困难', 'Easy', 'Medium', 'Hard']
     for kw in difficulty_keywords:
         if kw in html:
             problem['difficulty'] = kw
             break
     
+    # 提取状态
     status_keywords = [
         ('通过', '✅'),
         ('解答错误', '❌'),
@@ -345,8 +385,9 @@ def read_from_html_file(html_path):
             problem['status'] = f"{icon} {status_text}"
             break
     
+    # 提取示例
     examples = []
-    example_pattern = r'示例\s*\d+[^\n]*\n(.+?)(?=示例 | 提示 | 输入：|$)'
+    example_pattern = r'示例\s*\d+[^\n]*\n(.+?)(?=示例|提示|输入：|$)'
     example_matches = re.findall(example_pattern, html, re.DOTALL)
     if example_matches:
         examples = [m.strip() for m in example_matches[:2]]
@@ -367,6 +408,7 @@ def main():
         print("  python fetch_leetcode.py --html page.html 前缀和没想到 solution.py")
         sys.exit(1)
     
+    # 解析参数
     if sys.argv[1] == '--html':
         html_path = sys.argv[2]
         note = sys.argv[3] if len(sys.argv) > 3 else ""
@@ -384,6 +426,7 @@ def main():
         note = sys.argv[2] if len(sys.argv) > 2 else ""
         code_file = sys.argv[3] if len(sys.argv) > 3 else None
         
+        # 抓取题目信息
         print(f"[FETCH] 正在抓取：{url}")
         problem = fetch_leetcode_problem(url)
         
@@ -396,6 +439,7 @@ def main():
     print(f"[INFO] 难度：{problem['difficulty']}")
     print(f"[INFO] 状态：{problem.get('status', '未知')}")
     
+    # 读取代码文件
     code = ""
     if code_file and os.path.exists(code_file):
         with open(code_file, 'r', encoding='utf-8') as f:
@@ -403,6 +447,7 @@ def main():
     else:
         code = "# 待补充代码"
     
+    # 保存或更新到做题记录
     save_or_update_problem(
         problem=problem,
         code=code,
