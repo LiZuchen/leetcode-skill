@@ -14,8 +14,8 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 import re
 
-# 做题记录目录（可配置）
-NOTES_DIR = os.environ.get("LEETCODE_NOTES_DIR", r"<USER_DIR>/Documents/leetcode")
+# 做题记录目录（可通过环境变量配置，默认使用用户文档目录）
+NOTES_DIR = os.environ.get("LEETCODE_NOTES_DIR", r"<USER_DIR>\Documents\leetcode")
 
 def ensure_dir():
     """确保做题记录目录存在"""
@@ -227,7 +227,7 @@ def save_or_update_problem(problem, code, note=""):
     
     lang = detect_language(code) if code else "python"
     now = datetime.now()
-    timestamp = now.strftime("%Y-%m-%d %H:%M")
+    timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
     date_str = now.strftime("%Y-%m-%d")
     
     # 状态图标
@@ -251,6 +251,12 @@ def save_or_update_problem(problem, code, note=""):
     if title in problems:
         # 更新现有题目
         old_block = problems[title]
+        
+        # 去重检查：检查是否已存在相同时间戳的记录
+        existing_timestamps = re.findall(r'\| (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) \|', old_block)
+        if timestamp in existing_timestamps:
+            print(f"[SKIP] 题目 '{title}' 在 {timestamp} 已有记录，跳过重复提交")
+            return False
         
         # 更新状态（如果新状态更好）
         if "通过" in status and "当前状态" in old_block:

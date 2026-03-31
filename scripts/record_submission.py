@@ -10,7 +10,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-# 做题记录目录（可配置）
+# 做题记录目录（可通过环境变量配置，默认使用用户文档目录）
 NOTES_DIR = os.environ.get("LEETCODE_NOTES_DIR", r"<USER_DIR>\Documents\leetcode")
 
 def ensure_dir():
@@ -41,11 +41,13 @@ def detect_language(code):
     else:
         return 'python'  # 默认
 
-def extract_problem_slug(url):
-    """从 URL 提取题目 slug"""
+def extract_problem_number(url):
+    """从 URL 提取题目编号和名称"""
+    # 匹配 leetcode.cn/problems/xxx/ 或 leetcode.cn/problems/xxx
     match = re.search(r'/problems/([^/]+)/', url)
     if match:
-        return match.group(1)
+        slug = match.group(1)
+        return slug
     return None
 
 def parse_existing_file(filepath):
@@ -57,10 +59,12 @@ def parse_existing_file(filepath):
         content = f.read()
     
     problems = {}
+    # 匹配题目块：从 # 题目名称 到下一个 ---
     pattern = r'(# \d+\.\s*.+?\n.*?)(?=\n# \d+\.\s*|$)'
     matches = re.findall(pattern, content, re.DOTALL)
     
     for match in matches:
+        # 提取题目编号
         title_match = re.match(r'# (\d+\.\s*.+?)\n', match)
         if title_match:
             title = title_match.group(1).strip()
@@ -75,21 +79,32 @@ def update_or_create_problem(filepath, title, difficulty, url, status, runtime, 
     problems, existing_content = parse_existing_file(filepath)
     
     now = datetime.now()
-    timestamp = now.strftime("%Y-%m-%d %H:%M")
+    timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
     date_str = now.strftime("%Y-%m-%d")
     lang = detect_language(code) if code else "python"
     
+    # 状态图标
     status_icon = "✅" if "通过" in status else "❌" if "错误" in status else "⏱️"
     
+    # 检查题目是否已存在
     if title in problems:
+        # 更新现有题目
         old_block = problems[title]
         
+        # 去重检查：检查是否已存在相同时间戳的记录
+        existing_timestamps = re.findall(r'\| (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) \|', old_block)
+        if timestamp in existing_timestamps:
+            print(f"[SKIP] 题目 '{title}' 在 {timestamp} 已有记录，跳过重复提交")
+            return False
+        
+        # 更新状态（如果新状态更好）
         if "通过" in status and "当前状态" in old_block:
             old_block = re.sub(
                 r'\*\*当前状态\*\*：.*',
                 f'**当前状态**：{status_icon} {status}',
                 old_block
             )
+            # 更新最佳用时
             if runtime and runtime != "N/A" and "最佳用时" in old_block:
                 old_block = re.sub(
                     r'\*\*最佳用时\*\*：.*',
@@ -97,13 +112,16 @@ def update_or_create_problem(filepath, title, difficulty, url, status, runtime, 
                     old_block
                 )
         
+        # 添加提交历史
         if "## 提交历史" in old_block:
+            # 在表格中添加新行
             history_match = re.search(r'(## 提交历史\n\n\| 日期 \| 状态 \| 用时 \| 内存 \| 备注 \|\n\|------\|------\|------\|------\|------\|\n)', old_block)
             if history_match:
                 new_row = f"| {timestamp} | {status_icon} {status} | {runtime} | {memory} | {note} |\n"
                 insert_pos = history_match.end()
                 old_block = old_block[:insert_pos] + new_row + old_block[insert_pos:]
         else:
+            # 添加提交历史部分
             history_section = f"""
 ## 提交历史
 
@@ -111,10 +129,12 @@ def update_or_create_problem(filepath, title, difficulty, url, status, runtime, 
 |------|------|------|------|------|
 | {timestamp} | {status_icon} {status} | {runtime} | {memory} | {note} |
 """
+            # 在题目描述后插入
             desc_match = re.search(r'(## 题目描述\n.*?)(\n## )', old_block, re.DOTALL)
             if desc_match:
                 old_block = old_block[:desc_match.end()-3] + history_section + old_block[desc_match.end()-3:]
         
+        # 添加代码版本
         if code and code != "# 待补充代码":
             code_section = f"""
 ### {timestamp} ({status})
@@ -123,29 +143,39 @@ def update_or_create_problem(filepath, title, difficulty, url, status, runtime, 
 {code}
 ```
 """
+            # 在"我的代码"或"代码版本"后插入
             if "## 代码版本" in old_block:
                 old_block += code_section + "\n"
             elif "## 我的代码" in old_block:
+                # 在"我的代码"部分后添加
                 code_match = re.search(r'(## 我的代码\n.*?```.*?```)', old_block, re.DOTALL)
                 if code_match:
                     old_block = old_block[:code_match.end()] + "\n" + code_section + old_block[code_match.end():]
         
+        # 更新题目块
         problems[title] = old_block
         
-        with open(filepath, 'r', encoding='utf-8') as f:
-            content = f.read()
+        # 重建文件内容
+        new_content = existing_content
+        # 找到旧块的位置并替换
+        old_escaped = re.escape(old_block.split('\n')[0])  # 只匹配标题行
+        for key, block in problems.items():
+            if key == title:
+                # 找到并替换整个块
+                pattern = r'# ' + re.escape(title.split('. ')[1] if '. ' in title else title) + r'.*?(?=\n# \d+\.\s*|$)'
+                match = re.search(pattern, new_content, re.DOTALL)
+                if match:
+                    new_content = new_content[:match.start()] + block + new_content[match.end():]
+                break
         
-        pattern = r'# ' + re.escape(title.split('. ')[1] if '. ' in title else title) + r'.*?(?=\n# \d+\.\s*|$)'
-        match = re.search(pattern, content, re.DOTALL)
-        if match:
-            content = content[:match.start()] + old_block + content[match.end():]
-        
+        # 写入文件
         with open(filepath, 'w', encoding='utf-8') as f:
-            f.write(content)
+            f.write(new_content)
         
         print(f"[UPDATE] 题目 '{title}' 已更新提交记录")
         return True
     else:
+        # 创建新题目
         content = f"""# {title}
 
 - **难度**：{difficulty}
@@ -180,6 +210,7 @@ def update_or_create_problem(filepath, title, difficulty, url, status, runtime, 
 
 """
         
+        # 追加到文件
         with open(filepath, 'a', encoding='utf-8') as f:
             f.write(content)
         
@@ -202,15 +233,18 @@ def main():
     code_file = sys.argv[5] if len(sys.argv) > 5 else None
     note = sys.argv[6] if len(sys.argv) > 6 else ""
     
-    slug = extract_problem_slug(url)
+    # 从 URL 提取题目信息（简化版，实际应该抓取页面）
+    slug = extract_problem_number(url)
     title = slug.replace('-', ' ').title() if slug else "未知题目"
     difficulty = "未知"
     
+    # 读取代码文件
     code = ""
     if code_file and os.path.exists(code_file):
         with open(code_file, 'r', encoding='utf-8') as f:
             code = f.read()
     
+    # 记录提交
     filepath = get_monthly_file()
     update_or_create_problem(
         filepath=filepath,
